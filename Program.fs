@@ -66,9 +66,27 @@ let orElse lParser rParser =
             // return rParser result
             rResult
     // return the inner function
-    Parser innerFn     
+    Parser innerFn
+let mapP f parser =
+    let innerFn input =
+        // run parser with the input
+        let result = run parser input
+        // test the resul for Failure/Success
+        match result with
+        | Success (value,remaining) ->
+            // if success, return the value transformed by f
+            let newValue = f value
+            Success (newValue, remaining)
+        | Failure err ->
+            // if failed, return the error
+            Failure err
+    // return the inner function
+    Parser innerFn
+
 let ( .>>. ) = andThen
 let ( <|> ) = orElse
+let ( <!> ) = mapP
+let ( |>> ) x f = mapP f x
 let choice listOfParsers = List.reduce ( <|> ) listOfParsers
 let anyOf listOfChars =
     listOfChars
@@ -78,13 +96,34 @@ let parseLowercase =
     anyOf ['a'..'z']
 let parseDigit =
     anyOf ['0'..'9']
+let parseThreeDigitsAsStr =
+    // more compact version
+    // (parseDigit .>>. parseDigit .>>. parseDigit)
+    // |>> fun ((c1,c2),c3) -> System.String [| c1;c2;c3 |]
+    // create a parser that returns a tuple
+    let tupleParser =
+        parseDigit .>>. parseDigit .>>. parseDigit
+    
+    // create a function that turns the tuple into a string
+    let transformTuple ((c1,c2), c3) =
+        System.String [| c1; c2; c3 |]
+    // use "map" to combine them
+    mapP transformTuple tupleParser
+let parseThreeDigitsAsInt =
+    mapP int parseThreeDigitsAsStr
 let parseA = pchar 'A'
 let parseB = pchar 'B'
 let parseC = pchar 'C'
+// let pstring str =
+//     str
+//     |> Seq.map pchar
+//     |> Seq.reduce andThen
 let bOrElseC = parseB <|> parseC
 let parseAThenB = parseA .>>. parseB
 let parseAOrElseB = parseA <|> parseB
 let aAndThenBorC = parseA .>>. bOrElseC
+let parseThreeDigits =
+    parseDigit .>>. parseDigit .>>. parseDigit
 
 [<EntryPoint>]
 let main argv =
@@ -103,4 +142,7 @@ let main argv =
     printfn "%A " (run parseDigit "1ABC")
     printfn "%A " (run parseDigit "9ABC")
     printfn "%A " (run parseDigit "|ABC")
+    printfn "%A" (run parseThreeDigits "123A")
+    printfn "%A" (run parseThreeDigitsAsStr "123A")
+    printfn "%A" (run parseThreeDigitsAsInt "123A")
     0
