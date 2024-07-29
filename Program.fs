@@ -23,10 +23,41 @@ let run parser input =
     let (Parser innerFn) = parser
     // call inner function with input
     innerFn input
-    
+let andThen lhsParser rhsParser =
+    let innerFn input =
+        // Run left parser with the input
+        let lhsResult = run lhsParser input
+        
+        // test the result for Failure/Success
+        match lhsResult with
+        | Failure err ->
+            // return error from lhsParser
+            Failure err
+        | Success (lhsValue, lhsRemaining) ->
+            // run rhsParser with the remaining input
+            let rhsResult = run rhsParser lhsRemaining
+            
+            // test the result for Failure/Success
+            match rhsResult with
+            | Failure err ->
+                // return error from rhsParser
+                Failure err
+            | Success (rhsValue,rhsRemaining) ->
+                // combine both values as a pair
+                let newValue = (lhsValue,rhsValue)
+                // return remaining input after rhsParser
+                Success (newValue,rhsRemaining)
+    // return the inner function
+    Parser innerFn
+
+let ( .>>. ) = andThen
+
 let parseA = pchar 'A'
+let parseB = pchar 'B'
+let parseAThenB = parseA .>>. parseB
 [<EntryPoint>]
 let main argv =
-    printfn "%A " (run parseA "ABC")
-    printfn "%A " (run parseA "ZBC")
+    printfn "%A " (run parseAThenB "ABC")
+    printfn "%A " (run parseAThenB "ZBC")
+    printfn "%A " (run parseAThenB "AZC")
     0
