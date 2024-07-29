@@ -24,32 +24,32 @@ let run parser input =
     let (Parser innerFn) = parser
     // call inner function with input
     innerFn input
-let andThen lhsParser rhsParser =
+let returnP x =
     let innerFn input =
-        // Run left parser with the input
-        let lhsResult = run lhsParser input
-        
-        // test the result for Failure/Success
-        match lhsResult with
-        | Failure err ->
-            // return error from lhsParser
-            Failure err
-        | Success (lhsValue, lhsRemaining) ->
-            // run rhsParser with the remaining input
-            let rhsResult = run rhsParser lhsRemaining
-            
-            // test the result for Failure/Success
-            match rhsResult with
-            | Failure err ->
-                // return error from rhsParser
-                Failure err
-            | Success (rhsValue,rhsRemaining) ->
-                // combine both values as a pair
-                let newValue = (lhsValue,rhsValue)
-                // return remaining input after rhsParser
-                Success (newValue,rhsRemaining)
+        // ignore the input and return x
+        Success (x, input)
     // return the inner function
     Parser innerFn
+let bindP f p =
+    let innerFn input =
+        let result = run p input
+        match result with
+        | Failure err ->
+            // return error from parser
+            Failure err
+        | Success (value, remainingInput) ->
+            // apply f to get a new parser
+            let p2 = f value
+            // run parser with remaining input
+            run p2 remainingInput
+    Parser innerFn
+    
+// this is the operator that points to a bind function
+let ( >>= ) p f = bindP f p
+let andThen lhsParser rhsParser =
+    lhsParser >>= (fun lhsResult ->
+        rhsParser >>= (fun rhsResult ->
+            returnP (lhsResult,rhsResult)))    
 let orElse lParser rParser =
     let innerFn input =
         // run lParser with the input
@@ -83,13 +83,10 @@ let mapP f parser =
             Failure err
     // return the inner function
     Parser innerFn
-let returnP x =
-    let innerFn input =
-        // ignore the input and return x
-        Success (x, input)
-    // return the inner function
-    Parser innerFn
+
+//I thought this was a bind, but it wasn't
 let ( .>>. ) = andThen
+
 let ( <|> ) = orElse
 let ( <!> ) = mapP
 let ( |>> ) x f = mapP f x
@@ -130,7 +127,6 @@ let (>>.) p1 p2 =
     // create a pair
     p1 .>>. p2
     |> mapP (fun (a,b) -> b)
-
 let startsWith (str:string) (prefix:string) =
     str.Contains(prefix)
 let startsWithP =
@@ -193,19 +189,19 @@ let many parser =
 let manyA = many (pchar 'A')
 /// match one or more occurrences of the specified parser
 let many1 parser =
-    let innerFn input =
-        // run parser with the input
-        let firstResult = run parser input
-        // test the result for Failure/Success
-        match firstResult with
-        | Failure err -> Failure err
-        | Success (firstValue, inputAfterFirstParse) ->
-            // if first found, look for zeroOrMore now
-            let (subsequentValues,remaniningInput) =
-                parseZeroOrMore parser inputAfterFirstParse
-            let values = firstValue :: subsequentValues
-            Success (values, remaniningInput)
-    Parser innerFn    
+    parser >>= (fun head ->
+        many parser >>= (fun tail ->
+            returnP (head :: tail)))
+
+/// Parses one or more occurrences of p separated by sep
+let sepBy1 p sep =
+  let sepThenP = sep >>. p
+  p .>>. many sepThenP
+  |>> fun (p,pList) -> p::pList
+/// Parses zero or more occurrences of p separated by sep
+let sepBy p sep =
+    sepBy1 p sep <|> returnP []
+
 let pint =
     // helper
     let resultToInt (sign,charList) =
@@ -316,4 +312,19 @@ let main argv =
     
     printfn "%A" (run quotedInteger "\"1234\"")
     printfn "%A" (run quotedInteger "1234")
+    
+    let comma = pchar ','    
+    
+    let zeroOrMoreDigitList = sepBy parseDigit comma
+    let oneOrMoreDigitList = sepBy1 parseDigit comma
+    
+    printfn "%A" (run oneOrMoreDigitList "1;")
+    printfn "%A" (run oneOrMoreDigitList "1,2")
+    printfn "%A" (run oneOrMoreDigitList "1,2,3")
+    printfn "%A" (run oneOrMoreDigitList "Z;")
+    
+    printfn "%A" (run zeroOrMoreDigitList "1;")
+    printfn "%A" (run zeroOrMoreDigitList "1,2")
+    printfn "%A" (run zeroOrMoreDigitList "1,2,3")
+    printfn "%A" (run zeroOrMoreDigitList "Z;")
     0
