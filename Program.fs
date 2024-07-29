@@ -82,7 +82,12 @@ let mapP f parser =
             Failure err
     // return the inner function
     Parser innerFn
-
+let returnP x =
+    let innerFn input =
+        // ignore the input and return x
+        Success (x, input)
+    // return the inner function
+    Parser innerFn
 let ( .>>. ) = andThen
 let ( <|> ) = orElse
 let ( <!> ) = mapP
@@ -92,6 +97,17 @@ let anyOf listOfChars =
     listOfChars
     |> List.map pchar
     |> choice
+let applyP fP xP =
+    (fP .>>. xP)
+    |> mapP (fun (f,x) -> f x)
+let ( <*> ) = applyP
+let lift2 f xP yP =
+    returnP f <*> xP <*> yP
+let addP = lift2 (+)
+let startsWith (str:string) (prefix:string) =
+    str.Contains(prefix)
+let startsWithP =
+    lift2 startsWith
 let parseLowercase =
     anyOf ['a'..'z']
 let parseDigit =
