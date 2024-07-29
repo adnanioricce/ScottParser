@@ -2,7 +2,7 @@
 type ParseResult<'a> =
 | Success of 'a
 | Failure of string
-
+type Parse<'a> = Parser of (string -> ParseResult<'a * string>)
 let pchar charToMath =
     let innerFn str = 
         if String.IsNullOrWhiteSpace(str) |> not then
@@ -17,11 +17,16 @@ let pchar charToMath =
         else
             let msg = "No more input"
             Failure msg
-    innerFn
-            
+    Parser innerFn
+let run parser input =
+    // unwrap parser to get inner function
+    let (Parser innerFn) = parser
+    // call inner function with input
+    innerFn input
+    
 let parseA = pchar 'A'
 [<EntryPoint>]
 let main argv =
-    printfn "%A " (parseA "ABC")
-    printfn "%A " (parseA "ZBC")
+    printfn "%A " (run parseA "ABC")
+    printfn "%A " (run parseA "ZBC")
     0
