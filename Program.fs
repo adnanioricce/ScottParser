@@ -66,10 +66,18 @@ let orElse lParser rParser =
             // return rParser result
             rResult
     // return the inner function
-    Parser innerFn
-    
+    Parser innerFn     
 let ( .>>. ) = andThen
 let ( <|> ) = orElse
+let choice listOfParsers = List.reduce ( <|> ) listOfParsers
+let anyOf listOfChars =
+    listOfChars
+    |> List.map pchar
+    |> choice
+let parseLowercase =
+    anyOf ['a'..'z']
+let parseDigit =
+    anyOf ['0'..'9']
 let parseA = pchar 'A'
 let parseB = pchar 'B'
 let parseC = pchar 'C'
@@ -90,4 +98,9 @@ let main argv =
     printfn "%A " (run aAndThenBorC "ACZ")
     printfn "%A " (run aAndThenBorC "QBZ")
     printfn "%A " (run aAndThenBorC "AQZ")
+    printfn "%A " (run parseLowercase "aBC")
+    printfn "%A " (run parseLowercase "ABC")
+    printfn "%A " (run parseDigit "1ABC")
+    printfn "%A " (run parseDigit "9ABC")
+    printfn "%A " (run parseDigit "|ABC")
     0
