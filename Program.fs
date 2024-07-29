@@ -49,15 +49,45 @@ let andThen lhsParser rhsParser =
                 Success (newValue,rhsRemaining)
     // return the inner function
     Parser innerFn
-
+let orElse lParser rParser =
+    let innerFn input =
+        // run lParser with the input
+        let lResult = run lParser input
+        
+        // test the result for Failure/Success
+        match lResult with
+        | Success result ->
+            // if success, return the original result
+            lResult
+        | Failure err ->
+            // if failed, run rParser with the input
+            let rResult = run rParser input
+            
+            // return rParser result
+            rResult
+    // return the inner function
+    Parser innerFn
+    
 let ( .>>. ) = andThen
-
+let ( <|> ) = orElse
 let parseA = pchar 'A'
 let parseB = pchar 'B'
+let parseC = pchar 'C'
+let bOrElseC = parseB <|> parseC
 let parseAThenB = parseA .>>. parseB
+let parseAOrElseB = parseA <|> parseB
+let aAndThenBorC = parseA .>>. bOrElseC
+
 [<EntryPoint>]
 let main argv =
     printfn "%A " (run parseAThenB "ABC")
     printfn "%A " (run parseAThenB "ZBC")
     printfn "%A " (run parseAThenB "AZC")
+    printfn "%A " (run parseAOrElseB "AZZ")
+    printfn "%A " (run parseAOrElseB "BZZ")
+    printfn "%A " (run parseAOrElseB "CZZ")
+    printfn "%A " (run aAndThenBorC "ABZ")
+    printfn "%A " (run aAndThenBorC "ACZ")
+    printfn "%A " (run aAndThenBorC "QBZ")
+    printfn "%A " (run aAndThenBorC "AQZ")
     0
