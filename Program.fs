@@ -1,4 +1,5 @@
 ﻿open System
+open Microsoft.FSharp.Core
 type ParseResult<'a> =
 | Success of 'a
 | Failure of string
@@ -92,7 +93,10 @@ let ( .>>. ) = andThen
 let ( <|> ) = orElse
 let ( <!> ) = mapP
 let ( |>> ) x f = mapP f x
-     
+let opt p =
+    let some = p |>> Some
+    let none = returnP None
+    some <|> none
 let choice listOfParsers = List.reduce ( <|> ) listOfParsers
 let anyOf listOfChars =
     listOfChars
@@ -190,18 +194,21 @@ let many1 parser =
                 parseZeroOrMore parser inputAfterFirstParse
             let values = firstValue :: subsequentValues
             Success (values, remaniningInput)
-    Parser innerFn
+    Parser innerFn    
 let pint =
     // helper
-    let resultToInt digitList =
-        // ignore int overflow for now
-        digitList |> List.toArray |> System.String |> int            
+    let resultToInt (sign,charList) =
+        let i = charList |> charListToStr |> int
+        match sign with
+        | Some ch -> -i // negate the int
+        | None -> i        
+                         
     // define parser for one or more digits
     let digits = many1 parseDigit
     
     // map the digits to an int
-    digitsparseDigit
-    |> mapP resultToInt
+    opt (pchar '-') .>>. digits
+    |>> resultToInt
 let bOrElseC = parseB <|> parseC
 let parseAThenB = parseA .>>. parseB
 let parseAOrElseB = parseA <|> parseB
@@ -273,7 +280,13 @@ let main argv =
     printfn "%A" (run pint "1ABC")
     printfn "%A" (run pint "12BC")
     printfn "%A" (run pint "123C")
-    printfn "%A" (run pint "1234")
+    printfn "%A" (run pint "1234")    
     
     printfn "%A" (run pint "ABC")
+    let parseDigitThenSemicolon = parseDigit .>>. opt (pchar ';')
+    printfn "%A" (run parseDigitThenSemicolon "1;")
+    printfn "%A" (run parseDigitThenSemicolon "1")
+    
+    printfn "%A" (run pint "123C")
+    printfn "%A" (run pint "-123C")
     0
