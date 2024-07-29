@@ -120,6 +120,17 @@ let rec sequence parserList =
     | [] -> returnP []
     | head::tail -> consP head (sequence tail)
 let addP = lift2 (+)
+/// Keep only the result of the left side parser
+let (.>>) p1 p2 =
+    // create a pair
+    p1 .>>. p2
+    |> mapP (fun (a,b) -> a)
+/// Keep only the result of the right side parser
+let (>>.) p1 p2 =
+    // create a pair
+    p1 .>>. p2
+    |> mapP (fun (a,b) -> b)
+
 let startsWith (str:string) (prefix:string) =
     str.Contains(prefix)
 let startsWithP =
@@ -283,10 +294,26 @@ let main argv =
     printfn "%A" (run pint "1234")    
     
     printfn "%A" (run pint "ABC")
-    let parseDigitThenSemicolon = parseDigit .>>. opt (pchar ';')
+    let parseDigitThenSemicolon = parseDigit .>> opt (pchar ';')
     printfn "%A" (run parseDigitThenSemicolon "1;")
     printfn "%A" (run parseDigitThenSemicolon "1")
     
     printfn "%A" (run pint "123C")
     printfn "%A" (run pint "-123C")
+    
+    let ab = pstring "AB"
+    let cd = pstring "CD"
+    let ab_cd = (ab .>> whitespace) .>>. cd
+    
+    printfn "%A" (run ab_cd "AB \t\nCD")
+    
+    /// Keep only the result of the middle parser
+    let between p1 p2 p3 =
+        p1 >>. p2 .>> p3
+    
+    let pdoublequote = pchar '"'
+    let quotedInteger = between pdoublequote pint pdoublequote
+    
+    printfn "%A" (run quotedInteger "\"1234\"")
+    printfn "%A" (run quotedInteger "1234")
     0
