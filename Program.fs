@@ -155,6 +155,53 @@ let pstring str =
     |> sequence
     // convert Parser<char list> to Parser<string>
     |> mapP charListToStr
+let rec parseZeroOrMore parser input =
+    // run parser with the input
+    let firstResult = run parser input
+    // test the result for Failure/Success
+    match firstResult with
+    | Failure err ->
+        // if parse fails, return empty list
+        ([],input)
+    | Success (firstValue, inputAfterFirstParse) ->
+        // if parse succeeds, call recursively
+        // to get the subsequent values
+        let (subsequentValues, remainingInput) =
+            parseZeroOrMore parser inputAfterFirstParse
+        let values = firstValue :: subsequentValues
+        (values, remainingInput)
+/// match zero or more occurrences of the specified parser
+let many parser =
+    let innerFn input =
+        Success (parseZeroOrMore parser input)
+    Parser innerFn
+let manyA = many (pchar 'A')
+/// match one or more occurrences of the specified parser
+let many1 parser =
+    let innerFn input =
+        // run parser with the input
+        let firstResult = run parser input
+        // test the result for Failure/Success
+        match firstResult with
+        | Failure err -> Failure err
+        | Success (firstValue, inputAfterFirstParse) ->
+            // if first found, look for zeroOrMore now
+            let (subsequentValues,remaniningInput) =
+                parseZeroOrMore parser inputAfterFirstParse
+            let values = firstValue :: subsequentValues
+            Success (values, remaniningInput)
+    Parser innerFn
+let pint =
+    // helper
+    let resultToInt digitList =
+        // ignore int overflow for now
+        digitList |> List.toArray |> System.String |> int            
+    // define parser for one or more digits
+    let digits = many1 parseDigit
+    
+    // map the digits to an int
+    digitsparseDigit
+    |> mapP resultToInt
 let bOrElseC = parseB <|> parseC
 let parseAThenB = parseA .>>. parseB
 let parseAOrElseB = parseA <|> parseB
@@ -191,5 +238,42 @@ let main argv =
     let parseABC = pstring "ABC"
     printfn "%A" (run parseABC "ABCDE") 
     printfn "%A" (run parseABC "A|CDE") 
-    printfn "%A" (run parseABC "AB|DE") 
+    printfn "%A" (run parseABC "AB|DE")
+    // test some success cases
+    printfn "%A" (run manyA "ABCD") 
+    printfn "%A" (run manyA "AACD") 
+    printfn "%A" (run manyA "AAAD")
+    // test a case with no matches
+    printfn "%A" (run manyA "|BCD")
+    
+    let manyAB = many (pstring "AB")
+
+    printfn "%A" (run manyAB "ABCD")
+    printfn "%A" (run manyAB "ABABCD")
+    printfn "%A" (run manyAB "ZCD")
+    printfn "%A" (run manyAB "AZCD")
+    
+    let whitespaceChar = anyOf [' ';'\t';'\n']
+    let whitespace = many whitespaceChar
+    
+    printfn "%A" (run whitespace "ABC")
+    printfn "%A" (run whitespace " ABC")
+    printfn "%A" (run whitespace "\tABC")
+    
+    // define parser for one or more digits
+    let digits = many1 parseDigit 
+    
+    printfn "%A" (run digits "1ABC")
+    printfn "%A" (run digits "12BC")
+    printfn "%A" (run digits "123C")
+    printfn "%A" (run digits "1234")
+    
+    printfn "%A" (run digits "ABC")
+    
+    printfn "%A" (run pint "1ABC")
+    printfn "%A" (run pint "12BC")
+    printfn "%A" (run pint "123C")
+    printfn "%A" (run pint "1234")
+    
+    printfn "%A" (run pint "ABC")
     0
