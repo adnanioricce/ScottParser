@@ -1,10 +1,42 @@
 ﻿open System
 open Microsoft.FSharp.Core
+type ParserLabel = string
+type ParserError = string
 type ParseResult<'a> =
 | Success of 'a
-| Failure of string
-type Parse<'a> = Parser of (string -> ParseResult<'a * string>)
+| Failure of ParserLabel * ParserError
+let printResult (r) =
+    match r with
+    | Success (value,input) ->
+        printfn "%A" value
+    | Failure (label,error) ->
+        printfn "Error parsing %s\n%s" label error
+// type Parse<'a> = Parser of (string -> ParseResult<'a * string>)
+type Parser<'a> = {
+    parseFn: (string -> ParseResult<'a * string>)
+    label: ParserLabel
+}
+/// get the label from a parser
+let getLabel parser =
+    // get label
+    parser.label 
+// Update the label in the parser
+let setLabel parser newLabel =
+    // Change the inner function to use the new label
+    let newInnerFn input =
+        let result = parser.parseFn input
+        match result with
+        | Success s ->
+            // if Success, do nothing
+            Success s
+        | Failure (oldLabel, err) ->
+            // if Failure, return new label
+            Failure (newLabel, err)
+    // return the Parser
+    {parseFn = newInnerFn; label = newLabel}
+let ( <?> ) = setLabel
 let pchar charToMath =
+    let label = "unknown"
     let innerFn str = 
         if String.IsNullOrWhiteSpace(str) |> not then
             let first = str.[0]
@@ -12,45 +44,51 @@ let pchar charToMath =
                 let remaining = str.[1..]
                 //let msg = sprintf "Found %c" charToMath
                 Success (charToMath, remaining)
-            else
-                let msg = sprintf "Expecting '%c'. Got '%c'" charToMath first
-                Failure msg        
-        else
-            let msg = "No more input"
-            Failure msg
-    Parser innerFn
-let run parser input =
-    // unwrap parser to get inner function
-    let (Parser innerFn) = parser
+            else                
+                let label,error = (string charToMath),(sprintf "Unexpected '%c'" first)
+                Failure (label,error)
+        else            
+            let label,error = (string charToMath),(sprintf "Expecting '%c'. Got '%s'" charToMath "")
+            Failure (label,error)
+    {parseFn = innerFn; label = label}
+// Run a parser with some input    
+let run (parser:Parser<_>) input =    
     // call inner function with input
-    innerFn input
+    parser.parseFn input
 let returnP x =
+    let label = "unknown"
     let innerFn input =
         // ignore the input and return x
         Success (x, input)
     // return the inner function
-    Parser innerFn
+    {parseFn = innerFn; label = label}
 let bindP f p =
+    let label = "unknown"    
     let innerFn input =
         let result = run p input
         match result with
-        | Failure err ->
+        | Failure (err,label) ->
             // return error from parser
-            Failure err
+            Failure (err,label)
         | Success (value, remainingInput) ->
             // apply f to get a new parser
             let p2 = f value
             // run parser with remaining input
             run p2 remainingInput
-    Parser innerFn
+    {parseFn = innerFn;label = label}
     
 // this is the operator that points to a bind function
 let ( >>= ) p f = bindP f p
 let andThen lhsParser rhsParser =
+    let label = sprintf "%s andThen %s" (getLabel lhsParser) (getLabel rhsParser)
     lhsParser >>= (fun lhsResult ->
         rhsParser >>= (fun rhsResult ->
-            returnP (lhsResult,rhsResult)))    
+            returnP (lhsResult,rhsResult))) 
+        <?> label
+    
 let orElse lParser rParser =
+    let label =
+        sprintf "%s orElse %s" (getLabel lParser) (getLabel rParser)
     let innerFn input =
         // run lParser with the input
         let lResult = run lParser input
@@ -60,15 +98,16 @@ let orElse lParser rParser =
         | Success result ->
             // if success, return the original result
             lResult
-        | Failure err ->
+        | Failure (err,label) ->
             // if failed, run rParser with the input
             let rResult = run rParser input
             
             // return rParser result
             rResult
     // return the inner function
-    Parser innerFn
+    {parseFn = innerFn; label = label}
 let mapP f parser =
+    let label = "unknown"
     let innerFn input =
         // run parser with the input
         let result = run parser input
@@ -78,15 +117,14 @@ let mapP f parser =
             // if success, return the value transformed by f
             let newValue = f value
             Success (newValue, remaining)
-        | Failure err ->
+        | Failure (label,err) ->
             // if failed, return the error
-            Failure err
+            Failure (label,err)
     // return the inner function
-    Parser innerFn
+    {parseFn = innerFn;label = label}
 
 //I thought this was a bind, but it wasn't
 let ( .>>. ) = andThen
-
 let ( <|> ) = orElse
 let ( <!> ) = mapP
 let ( |>> ) x f = mapP f x
@@ -96,9 +134,11 @@ let opt p =
     some <|> none
 let choice listOfParsers = List.reduce ( <|> ) listOfParsers
 let anyOf listOfChars =
+    let label = sprintf "any of %A" listOfChars    
     listOfChars
     |> List.map pchar
     |> choice
+    <?> label
 let applyP fP xP =
     (fP .>>. xP)
     |> mapP (fun (f,x) -> f x)
@@ -171,7 +211,7 @@ let rec parseZeroOrMore parser input =
     let firstResult = run parser input
     // test the result for Failure/Success
     match firstResult with
-    | Failure err ->
+    | Failure (label,err) ->
         // if parse fails, return empty list
         ([],input)
     | Success (firstValue, inputAfterFirstParse) ->
@@ -183,9 +223,10 @@ let rec parseZeroOrMore parser input =
         (values, remainingInput)
 /// match zero or more occurrences of the specified parser
 let many parser =
+    let label = "unknown"
     let innerFn input =
         Success (parseZeroOrMore parser input)
-    Parser innerFn
+    {parseFn = innerFn;label = label}
 let manyA = many (pchar 'A')
 /// match one or more occurrences of the specified parser
 let many1 parser =
@@ -327,4 +368,10 @@ let main argv =
     printfn "%A" (run zeroOrMoreDigitList "1,2")
     printfn "%A" (run zeroOrMoreDigitList "1,2,3")
     printfn "%A" (run zeroOrMoreDigitList "Z;")
+
+    let parseDigit_WithLabel =
+        anyOf ['0'..'9']
+        <?> "digit"
+    run parseDigit_WithLabel "|ABC"
+    |> printResult
     0
