@@ -96,7 +96,9 @@ let printResult (r) =
         let errorLine = parserPos.currentLine
         let colPos = parserPos.column
         let linePos = parserPos.line
-        let failureCaret = sprintf "%*s^%s" colPos "" error    
+        //Note: for some reason, the '^ ' is actually going one position forward instead of the expected one
+        // I think it would be best to check how the colPos is being passed, but for now this solves the problem
+        let failureCaret = sprintf "%*s^%s" (colPos-1) "" error    
         printfn "Line %i Col: %i Error parsing %s\n%s\n%s" linePos colPos label errorLine failureCaret
 // type Parse<'a> = Parser of (string -> ParseResult<'a * string>)
 type Parser<'a> = {
@@ -131,18 +133,19 @@ let satisfy predicate label =
     let innerFn input =
         let currentLine = input |> InputState.currentLine        
         if String.IsNullOrEmpty(currentLine) then
-            Failure (label,"No more input", {column = 0;line = 0;currentLine = currentLine})
+            Failure (label,"No more input", parserPositionFromInputState input)
         else
             let newState,(Some first) = input |> InputState.nextChar
             if predicate first then                
                 Success (first,newState)
             else
                 let err = sprintf "Unexpected '%c'" first
-                Failure (label, err, {column = 0;line = 0;currentLine = currentLine})
+                Failure (label, err, newState |> parserPositionFromInputState)
 
     {parseFn = innerFn;label = label}
-
+/// parse a char
 let pchar charToMath =
+    // label is just the character
     let predicate ch = (ch = charToMath)
     let label = sprintf "%c" charToMath
     satisfy predicate label
@@ -299,8 +302,10 @@ let parseB = pchar 'B'
 let parseC = pchar 'C'
 let charListToStr charList =
     charList |> List.toArray |> System.String
-// match a specific string
+/// parse a specific string
 let pstring str =
+    // label is just the string
+    let label = str
     str
     // convert to list of char
     |> List.ofSeq
@@ -310,6 +315,7 @@ let pstring str =
     |> sequence
     // convert Parser<char list> to Parser<string>
     |> mapP charListToStr
+    <?> label
 let rec parseZeroOrMore parser input =
     // run parser with the input
     let firstResult = runOnInput parser input
@@ -337,6 +343,17 @@ let many1 parser =
     parser >>= (fun head ->
         many parser >>= (fun tail ->
             returnP (head :: tail)))
+/// Parses a sequence of zero or more chars with the char parser cp.
+/// It returns the parsed chars as a string.
+let manyChars cp =
+  many cp
+  |>> charListToStr
+
+/// Parses a sequence of one or more chars with the char parser cp.
+/// It returns the parsed chars as a string.
+let manyChars1 cp =
+    many1 cp
+    |>> charListToStr
 
 /// Parses one or more occurrences of p separated by sep
 let sepBy1 p sep =
@@ -348,19 +365,39 @@ let sepBy p sep =
     sepBy1 p sep <|> returnP []
 
 let pint =
+    let label = "integer"
     // helper
     let resultToInt (sign,charList) =
         let i = charList |> charListToStr |> int
         match sign with
         | Some ch -> -i // negate the int
         | None -> i        
-                         
+
     // define parser for one or more digits
     let digits = many1 parseDigit
     
     // map the digits to an int
     opt (pchar '-') .>>. digits
-    |>> resultToInt
+    |> mapP resultToInt
+    <?> label
+let pfloat =
+    let label = "float"
+
+    // helper
+    let resultToFloat (((sign, lDigits), point), rDigits) =
+        let fl = sprintf "%s.%s" lDigits rDigits |> float
+        match sign with
+        | Some ch -> -fl
+        | None -> fl
+    
+    // define parser for one or more digits
+    let digits = manyChars1 parseDigit
+
+    // a float is sign, digits, point, digits (ignore exponents for now)
+    opt (pchar '-') .>>. digits .>>. pchar '.' .>>. digits
+    |> mapP resultToFloat
+    <?> label
+
 let bOrElseC = parseB <|> parseC
 let parseAThenB = parseA .>>. parseB
 let parseAOrElseB = parseA <|> parseB
@@ -420,8 +457,8 @@ let main argv =
     
     printfn "%A" (run whitespace ( "ABC"))
     printfn "%A" (run whitespace ( " ABC"))
-    printfn "%A" (run whitespace ( "\tABC"))
-    
+    printfn "%A" (run whitespace ( "\tABC"))    
+
     // define parser for one or more digits
     let digits = many1 parseDigit 
     
@@ -498,5 +535,40 @@ let main argv =
         pchar 'A' .>>. pchar 'B'
         <?> "AB"
     run parseAB "A|C"
+    |> printResult
+
+    run (pstring "AB") "ABC"
+    |> printResult
+    run (pstring "AB") "A|C"
+    |> printResult
+
+    /// parse zero or more whitespace char
+    let spaces = many whitespaceChar
+
+    /// parse one or more whitespace char
+    let spaces1 = many1 whitespaceChar
+
+    run spaces " ABC"
+    |> printResult
+
+    run spaces "A"
+    |> printResult
+    
+    run spaces1 " ABC"
+    |> printResult
+
+    run spaces1 "A"
+    |> printResult
+    
+    run pint "-123Z"
+    |> printResult    
+
+    run pint "-Z123"
+    |> printResult    
+
+    run pfloat "-123.45Z"
+    |> printResult    
+
+    run pfloat "-123Z45"
     |> printResult
     0
