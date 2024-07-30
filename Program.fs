@@ -35,22 +35,26 @@ let setLabel parser newLabel =
     // return the Parser
     {parseFn = newInnerFn; label = newLabel}
 let ( <?> ) = setLabel
+/// Match an input token if the predicate is satisfied
+let satisfy predicate label =
+    let innerFn input =
+        if String.IsNullOrEmpty(input) then
+            Failure (label,"No more input")
+        else
+            let first = input.[0]
+            if predicate first then
+                let remainingInput = input.[1..]
+                Success (first,remainingInput)
+            else
+                let err = sprintf "Unexpected '%c'" first
+                Failure (label, err)
+
+    {parseFn = innerFn;label = label}
+
 let pchar charToMath =
-    let label = "unknown"
-    let innerFn str = 
-        if String.IsNullOrWhiteSpace(str) |> not then
-            let first = str.[0]
-            if first = charToMath then
-                let remaining = str.[1..]
-                //let msg = sprintf "Found %c" charToMath
-                Success (charToMath, remaining)
-            else                
-                let label,error = (string charToMath),(sprintf "Unexpected '%c'" first)
-                Failure (label,error)
-        else            
-            let label,error = (string charToMath),(sprintf "Expecting '%c'. Got '%s'" charToMath "")
-            Failure (label,error)
-    {parseFn = innerFn; label = label}
+    let predicate ch = (ch = charToMath)
+    let label = sprintf "%c" charToMath
+    satisfy predicate label
 // Run a parser with some input    
 let run (parser:Parser<_>) input =    
     // call inner function with input
@@ -172,9 +176,13 @@ let startsWith (str:string) (prefix:string) =
 let startsWithP =
     lift2 startsWith
 let parseLowercase =
-    anyOf ['a'..'z']
+    let predicate = Char.IsAsciiLetterLower
+    let label = "lowercase"
+    satisfy predicate label
 let parseDigit =
-    anyOf ['0'..'9']
+    let predicate = Char.IsDigit
+    let label = "digit"
+    satisfy predicate label
 let parseThreeDigitsAsStr =
     // more compact version
     // (parseDigit .>>. parseDigit .>>. parseDigit)
@@ -308,7 +316,10 @@ let main argv =
     printfn "%A" (run manyAB "ZCD")
     printfn "%A" (run manyAB "AZCD")
     
-    let whitespaceChar = anyOf [' ';'\t';'\n']
+    let whitespaceChar = 
+        let predicate = Char.IsWhiteSpace
+        let label = "whitespace"
+        satisfy predicate label
     let whitespace = many whitespaceChar
     
     printfn "%A" (run whitespace "ABC")
